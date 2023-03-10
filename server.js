@@ -12,50 +12,46 @@ require("dotenv").config();
 // create express app
 const app = express();
 
-// db
-mongoose
-  .connect(process.env.DATABASE, {
-    useNewUrlParser: true,
-    useFindAndModify: false,
-    useUnifiedTopology: true,
-    useCreateIndex: true,
-  })
-  .then(() => console.log("**DB CONNECTED**"))
-  .catch((err) => console.log("DB CONNECTION ERR => ", err));
+// add express-session middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    sameSite: 'lax'
+  }
+}));
+
+// csrf
+const csrfProtection = csrf({ cookie: false, session: app.locals.session });
+app.use(csrfProtection);
 
 // apply middlewares
 app.use(cors({
-  credentials: true,
-  origin: 'https://trial-umber.vercel.app'
+  
+  origin: 'https://trial-umber.vercel.app',
+  credentials: true
 }));
 app.use(express.json({limit: '5mb'}));
 app.use(cookieParser());
 app.use(morgan("dev"));
 
-// add express-session middleware
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
-    }
-  })
-);
+app.use((req, res, next) => {
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(16).toString('hex');
+  }
+  res.locals.csrfToken = req.session.csrfToken;
+  next();
+});
 
 // route
 readdirSync("./routes").map((r) => app.use("/api", require(`./routes/${r}`)));
 
-// csrf
-const csrfProtection = csrf({ cookie: true });
-app.use(csrfProtection);
-
 app.get("/api/csrf-token", (req, res) => {
   res.header('Access-Control-Allow-Origin', 'https://trial-umber.vercel.app');
   res.header('Access-Control-Expose-Headers', 'X-CSRF-Token');
-  res.json({ csrfToken: req.csrfToken() });
+  res.json({ csrfToken: req.session.csrfToken });
 });
 
 // error handler
